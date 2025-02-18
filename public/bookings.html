@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Your Booking</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">View Your Booking</h2>
+
+    <!-- Search Box -->
+    <div class="d-flex justify-content-center mb-4">
+        <input type="text" id="phone" class="form-control w-50" placeholder="Enter your phone number" required>
+        <button class="btn btn-primary ms-2" onclick="fetchBooking()">Search</button>
+    </div>
+
+    <!-- Booking Details -->
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover text-center" id="bookingTable" style="display:none;">
+            <thead class="table-dark">
+                <tr>
+                    <th>Phone</th>
+                    <th>Date</th>
+                    <th>Slot</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="bookingDetails">
+                <!-- Booking details will be displayed here -->
+            </tbody>
+        </table>
+    </div>
+    <p id="noBookingsMessage" class="text-danger text-center mt-3" style="display:none;">No bookings found for this phone number.</p>
+</div>
+
+<!-- Reschedule Modal -->
+<div class="modal fade" id="rescheduleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reschedule Your Booking</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label">New Date:</label>
+                <input type="date" id="newDate" class="form-control" required>
+                
+                <label class="form-label mt-2">New Slot:</label>
+                <select id="newSlot" class="form-select" required>
+                    <option value="" disabled selected>Select a slot</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-success" onclick="rescheduleBooking()">Reschedule</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  let currentBookingId = null;
+
+// Function to open reschedule modal and load existing booking info
+function openRescheduleModal(bookingId, currentDate, currentSlot) {
+    currentBookingId = bookingId; // Store the booking ID
+    document.getElementById("newDate").value = currentDate;
+    document.getElementById("newSlot").value = currentSlot;
+
+    // Update available slots based on the current booking date
+    fetchBookedSlots(currentDate);
+
+    const modal = new bootstrap.Modal(document.getElementById("rescheduleModal"));
+    modal.show();
+}
+
+// Fetch available slots for the selected date
+async function fetchBookedSlots(selectedDate) {
+    const slotsDropdown = document.getElementById("newSlot");
+    slotsDropdown.innerHTML = '<option value="" disabled selected>Loading...</option>'; // Loading state
+
+    if (!selectedDate) return;
+
+    try {
+        const response = await fetch("http://localhost:5000/api/bookings");
+        const bookings = await response.json();
+
+        const availableSlots = generateSlots("09:00", "18:00"); // Generate available slots from 9 AM to 6 PM
+
+        slotsDropdown.innerHTML = '<option value="" disabled selected>Select a slot</option>';
+
+        availableSlots.forEach(slot => {
+            const slotRange = `${slot.start} - ${slot.end}`;
+            const isBooked = bookings.some(booking => booking.date === selectedDate && booking.slot === slotRange);
+            if (!isBooked) {
+                const option = document.createElement("option");
+                option.value = slotRange;
+                option.textContent = slotRange;
+                slotsDropdown.appendChild(option);
+            }
+        });
+
+        if (slotsDropdown.options.length === 1) {
+            slotsDropdown.innerHTML = '<option value="" disabled>No slots available</option>';
+        }
+    } catch (error) {
+        console.error("Error fetching bookings:", error);
+        alert("Error fetching available slots. Please try again.");
+    }
+}
+
+// Helper function to generate time slots with a 30-minute gap between slots
+function generateSlots(startTime, endTime) {
+    const slots = [];
+    let currentTime = new Date("1970-01-01T" + startTime + "Z");
+    const endTimeDate = new Date("1970-01-01T" + endTime + "Z");
+
+    while (currentTime < endTimeDate) {
+        const start = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        currentTime.setMinutes(currentTime.getMinutes() + 30); // Add 30 minutes for the next slot
+        const end = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        // Create the slot range
+        slots.push({ start, end });
+
+        // Skip 30 minutes for the next slot
+        currentTime.setMinutes(currentTime.getMinutes() + 30);
+    }
+
+    return slots;
+}
+
+
+// Set the date range to be within the next 10 days
+function setDateRange() {
+    const today = new Date();
+    const maxDate = new Date(today);
+    maxDate.setDate(today.getDate() + 10); // 10 days from today
+
+    const todayStr = today.toISOString().split('T')[0]; // format: YYYY-MM-DD
+    const maxDateStr = maxDate.toISOString().split('T')[0]; // format: YYYY-MM-DD
+
+    const newDateInput = document.getElementById("newDate");
+    newDateInput.setAttribute("min", todayStr); // Set today's date as the minimum
+    newDateInput.setAttribute("max", maxDateStr); // Set the max date to 10 days from today
+}
+
+// Initialize date range on page load
+window.onload = function() {
+    setDateRange();
+}
+
+// Function to handle rescheduling of the booking
+async function rescheduleBooking() {
+    const newDate = document.getElementById("newDate").value;
+    const newSlot = document.getElementById("newSlot").value;
+
+    if (!newDate || !newSlot) {
+        alert("Please fill in all fields.");
+        return;
+    }
+
+    try {
+        const response = await fetch(`http://localhost:5000/api/bookings/reschedule/${currentBookingId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date: newDate, slot: newSlot })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            alert("Booking rescheduled successfully!");
+            fetchBooking(); // Refresh the booking list
+            const modal = bootstrap.Modal.getInstance(document.getElementById("rescheduleModal"));
+            modal.hide(); // Close the modal
+        } else {
+            alert(data.message || "Error rescheduling booking.");
+        }
+    } catch (error) {
+        console.error("Error rescheduling:", error);
+        alert("Error rescheduling. Please try again.");
+    }
+}
+
+// Function to fetch booking based on the phone number
+async function fetchBooking() {
+    const phone = document.getElementById("phone").value;
+    try {
+        const response = await fetch(`http://localhost:5000/api/bookings/${phone}`);
+        const data = await response.json();
+
+        if (response.ok) {
+            displayBookingDetails(data);
+        } else {
+            alert(data.message);
+        }
+    } catch (error) {
+        console.error("Error fetching booking:", error);
+        alert("Error fetching booking. Please try again.");
+    }
+}
+
+// Function to display booking details in a table
+function displayBookingDetails(bookings) {
+    const bookingTable = document.getElementById("bookingTable");
+    const bookingDetailsDiv = document.getElementById("bookingDetails");
+    const noBookingsMessage = document.getElementById("noBookingsMessage");
+
+    bookingDetailsDiv.innerHTML = "";
+    noBookingsMessage.style.display = "none";
+
+    if (bookings.length === 0) {
+        bookingTable.style.display = "none";
+        noBookingsMessage.style.display = "block";
+        return;
+    }
+
+    bookingTable.style.display = "table";
+    bookings.forEach(booking => {
+        const bookingRow = document.createElement("tr");
+        bookingRow.innerHTML = `
+            <td>${booking.phone}</td>
+            <td>${booking.date}</td>
+            <td>${booking.slot}</td>
+            <td>
+                <button class="btn btn-warning btn-sm" onclick="openRescheduleModal('${booking._id}', '${booking.date}', '${booking.slot}')">Reschedule</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteBooking('${booking._id}')">Delete</button>
+            </td>
+        `;
+        bookingDetailsDiv.appendChild(bookingRow);
+    });
+}
+
+// Function to delete a booking
+async function deleteBooking(bookingId) {
+    if (confirm("Are you sure you want to delete this booking?")) {
+        try {
+            const response = await fetch(`http://localhost:5000/api/bookings/${bookingId}`, { method: 'DELETE' });
+            if (response.ok) {
+                alert("Booking deleted successfully!");
+                fetchBooking();
+            } else {
+                alert("Error deleting booking.");
+            }
+        } catch (error) {
+            console.error("Error:", error);
+            alert("Error deleting. Please try again.");
+        }
+    }
+}
+
+</script>
+
+</body>
+</html>

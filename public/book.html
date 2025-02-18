@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Your Slot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            max-width: 500px;
+            margin-top: 50px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h2 class="text-center mb-4">Book Your Slot</h2>
+
+        <div class="mb-3">
+            <label for="phone" class="form-label">Phone Number</label>
+            <input type="text" class="form-control" id="phone" placeholder="Enter your phone number" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="date" class="form-label">Select Date</label>
+            <input type="date" class="form-control" id="date" required>
+        </div>
+
+        <div class="mb-3">
+            <label for="slot" class="form-label">Select Slot</label>
+            <select id="slot" class="form-select" required>
+                <option value="" disabled selected>Select a slot</option>
+            </select>
+        </div>
+
+        <button class="btn btn-primary w-100" onclick="bookSlot()">Book Slot</button>
+    </div>
+
+    <script>
+        // Set minimum and maximum date (today + 10 days)
+        document.addEventListener("DOMContentLoaded", function () {
+            const dateInput = document.getElementById("date");
+            const today = new Date();
+            const maxDate = new Date();
+            maxDate.setDate(today.getDate() + 10);
+
+            // Format dates as YYYY-MM-DD
+            const todayStr = today.toISOString().split("T")[0];
+            const maxDateStr = maxDate.toISOString().split("T")[0];
+
+            dateInput.setAttribute("min", todayStr);
+            dateInput.setAttribute("max", maxDateStr);
+        });
+
+        function generateSlots(startTime, endTime) {
+            const slots = [];
+            let start = new Date(`1970-01-01T${startTime}:00`);
+            let end = new Date(`1970-01-01T${endTime}:00`);
+
+            while (start < end) {
+                const slotStart = new Date(start);
+                const slotEnd = new Date(start);
+                slotEnd.setHours(start.getHours() + 1);
+                slots.push({
+                    start: slotStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    end: slotEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+                start.setMinutes(start.getMinutes() + 90);
+            }
+            return slots;
+        }
+
+        async function fetchBookedSlots() {
+            const selectedDate = document.getElementById("date").value;
+            const slotsDropdown = document.getElementById("slot");
+            slotsDropdown.innerHTML = '<option value="" disabled selected>Loading...</option>';
+
+            if (!selectedDate) return;
+
+            try {
+                const response = await fetch("http://localhost:5000/api/bookings");
+                const bookings = await response.json();
+                const availableSlots = generateSlots("09:00", "18:00");
+
+                slotsDropdown.innerHTML = '<option value="" disabled selected>Select a slot</option>';
+
+                availableSlots.forEach(slot => {
+                    let isBooked = bookings.some(booking => booking.date === selectedDate && booking.slot === `${slot.start} - ${slot.end}`);
+                    if (!isBooked) {
+                        const option = document.createElement("option");
+                        option.value = `${slot.start} - ${slot.end}`;
+                        option.textContent = `${slot.start} - ${slot.end}`;
+                        slotsDropdown.appendChild(option);
+                    }
+                });
+
+                if (slotsDropdown.options.length === 1) {
+                    slotsDropdown.innerHTML = '<option value="" disabled>No slots available</option>';
+                }
+            } catch (error) {
+                console.error("Error fetching bookings:", error);
+            }
+        }
+
+        async function bookSlot() {
+            const phone = document.getElementById("phone").value.trim();
+            const date = document.getElementById("date").value;
+            const slot = document.getElementById("slot").value;
+
+            if (!phone || !date || !slot) {
+                alert("Please fill in all fields.");
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:5000/api/book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, date, slot })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert("Booking successful!");
+                    fetchBookedSlots();
+                } else {
+                    alert(data.message || "Error booking slot.");
+                }
+            } catch (error) {
+                console.error("Error booking slot:", error);
+                alert("Error booking slot. Please try again.");
+            }
+        }
+
+        document.getElementById("date").addEventListener("change", fetchBookedSlots);
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
